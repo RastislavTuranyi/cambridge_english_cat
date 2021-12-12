@@ -1,0 +1,56 @@
+Contributing new questions
+==========================
+
+Make sure you know which difficulty level your questions are. If you know it, go into the appropriate folder in Data/.
+Inside are multiple CSV files based on the type of question. Please see below to know which question type you have
+and how to append the file. All the files use SEMICOLON (;) as the separator.
+
+gapped text
+ - A text from which paragraphs or sentences have been removed and placed in jumbled order after the text. Candidates must decide 
+   from where in the text the sentences have been removed.
+	title;subtitle;full text
+	correct answer to question 1;correct answer to question 2;etc.
+	option 1;option 2;option 3;etc.
+	    - full text = the text that the questions consists of, with the gaps present. All gaps must have the following
+	                  formatting: (n) ..........
+	                  where n is the number of the gap (counting from 1). There MUST be exactly 10 fullstops.
+
+key word transformations
+ - Several discrete items with a lead-in sentence and a gapped response to complete in 3–8 words including a given ‘key’ word.
+	original text;keyword;text with gap;accepted answer 1; accepted answer 2;etc.
+
+multipe choice
+ - A text followed by six 4-option multiple‑choice questions.
+   Question of this type consists of a text with multiple paragraphs that has only text and no interruptions (ie. no gaps). 
+   Below the text are several multiple choice questions about the content of the text.
+ - Each line should be formatted in the following way:
+	title;subtitle;text;correct answer;question;choice 1;choice 2; choice 3; choice 4;etc.
+		- if title and/or subtitle isn't present, leave the field empty (eg. ;;text... if neither is present)
+		- text = usually two continuous paragraphs from the full text.
+		- correct answer = the LETTER that is the correct answer. There must be only one.
+		- question = the question or statement to be answered using one of the multiple choices (ie. the text following quesion number)
+
+multiple match
+ - A text, or several short texts, preceded by multiple-matching questions. Candidates must match a prompt to elements in the text.
+ - Each section of questions (the whole multiple match question) should be formatted over four lines:
+	instructions
+	question 1; question 2; question 3;etc.
+	title 1; text 1; title 2; text 2; title 3;text 3; etc.
+	correct answer to question 1;correct answer to question 2; etc.
+
+multiple-choice cloze
+ - A single text with several gaps. Candidates must choose one word or phrase from a set of four to fill each gap.
+	text;correct answer;option A;option B;option C;option D;etc.
+
+open cloze
+ - A modified cloze test consisting of a text with several gaps. Candidates think of the word which best fits each gap.
+	text;accepted answer 1;accepted answer 2;etc.
+
+read picture
+ - Question of this type consists of multiple short, independent
+	correct answer;question;choice 1;choice 2;choice 3;etc.
+
+word formation
+ - A text containing several gaps. Each gap corresponds to a word. The stems of the missing words are given beside 
+   the text and must be changed to form the missing word.
+	text;word stem;accepted answer 1;accepted answer 2;etc.
