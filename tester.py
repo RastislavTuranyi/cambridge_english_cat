@@ -18,7 +18,7 @@ class Tester:
     def get_question(self):
         qclass = self.get_question_class()
         self.qno += 1
-        self.question = qclass(self.difficulty, self.qtypes[self.qno], self.used_qs)
+        self.question = qclass(self.difficulty.name, self.used_qs)
         # Save the correct answers
         self.answers[self.qno, 1] = '/'.join(self.question.answers)
 
@@ -52,7 +52,9 @@ class Tester:
 
 
 class Question(ABC):
-    def __init__(self, difficulty, qtype, used_qs):
+    name = ''
+
+    def __init__(self, difficulty: str, used_qs):
         self.lineno = 0
 
         self.answers = []
@@ -65,16 +67,16 @@ class Question(ABC):
         self.subtitle = ''
 
         pwd = os.path.dirname(os.path.realpath(__file__))
-        self.csv_path = os.path.join(pwd, 'Data', difficulty.name, ''.join([qtype, '.csv']))
+        self.csv_path = os.path.join(pwd, 'Data', difficulty, ''.join([self.name, '.csv']))
 
         with open(self.csv_path, encoding='utf-8') as file:
             csv_file = [i for i in csv.reader(file, delimiter=';') if i]
             file_length = len(csv_file)
 
-        self.select_question(csv_file, file_length, used_qs)
+        self.select_question(csv_file, file_length, used_qs, difficulty)
 
     @abstractmethod
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         pass
 
     @abstractmethod
@@ -83,7 +85,7 @@ class Question(ABC):
 
 
 class LineQuestion(Question, ABC):
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         for __ in range(file_length * 5):
             self.lineno = random.randint(0, file_length - 1)
             if self.lineno not in used_qs.get(self.csv_path, []):
@@ -98,7 +100,7 @@ class BlockQuestion(Question, ABC):
     block_length = 0
     question_location = 0
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         if file_length % self.block_length != 0:
             raise Exception(file_length)
         else:
@@ -119,7 +121,7 @@ class BlockQuestion(Question, ABC):
 
 class MultipleChoiceQuestion(Question, ABC):
     @abstractmethod
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
     def check_answer(self, submitted_answer):
@@ -131,7 +133,7 @@ class MultipleChoiceQuestion(Question, ABC):
 
 class OpenAnswerQuestion(Question, ABC):
     @abstractmethod
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
     def check_answer(self, submitted_answer):
@@ -145,11 +147,11 @@ class OpenAnswerQuestion(Question, ABC):
 class GappedText(MultipleChoiceQuestion, BlockQuestion):
     name = 'gapped text'
     instruction = 'Several sentences/paragraphs have been removed from the text below. Choose the option that has been' \
-                  ' removed from gap number '
+                  ' removed from gap number <b>'
     block_length = 3
     question_location = 1
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
         self.title = csv_file[self.block * self.block_length][0]
@@ -177,10 +179,18 @@ class GappedText(MultipleChoiceQuestion, BlockQuestion):
 
 class KeyWordTransformations(LineQuestion):
     name = 'key word transformations'
-    instruction = ''
+    instruction = 'Complete the second sentence so that it has a similar meaning to the first sentence, using the ' \
+                  'word given. <b>Do not change the word given<b>. You must use between <b>two<b> and <b>five<b> ' \
+                  'words, including the word given.'
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
+
+        self.difficulty = args[0]
+        if self.difficulty == 'C1':
+            self.instruction = self.instruction.replace('two','three').replace('five', 'six')
+        elif self.difficulty == 'C2':
+            self.instruction = self.instruction.replace('two', 'three').replace('five', 'eight')
 
         line = csv_file[self.lineno]
         self.text = line[0]
@@ -189,8 +199,13 @@ class KeyWordTransformations(LineQuestion):
         self.answers = line[3:]
 
     def check_answer(self, submitted_answer):
-        scores = np.zeros(len(self.answers))
-        submitted_words = submitted_answer.replace(',', '').replace('.', '').replace(';', '').split()
+        scores = np.zeros(len(self.answers), dtype=int)
+        submitted_words = submitted_answer.lower().replace(',', '').replace('.', '').replace(';', '').split()
+
+        if ((self.difficulty == 'B2' and not (2 <= len(submitted_words) <= 5)) or
+                (self.difficulty == 'C1' and not (3 <= len(submitted_words) <= 6)) or
+                (self.difficulty == 'C2' and not (3 <= len(submitted_words) <= 8))):
+            return 0
 
         # Score the submitted answer against each possibple correct answer
         for answer_number, correct_answer in enumerate(self.answers):
@@ -203,7 +218,7 @@ class KeyWordTransformations(LineQuestion):
 
                 # For the second half, search where it may be beginning by searching for the first word
                 if half_number == 1:
-                    offset = [j for j, answer in enumerate(submitted_answer) if answer == words[0]]
+                    offset = [j for j, answer in enumerate(submitted_words) if answer == words[0]]
                     if not offset:
                         break
 
@@ -220,12 +235,14 @@ class KeyWordTransformations(LineQuestion):
                         scores[answer_number] += 1
                         break
 
+        return max(scores)
+
 
 class MultipleChoice(LineQuestion, MultipleChoiceQuestion):
     name = 'multiple choice'
     instruction = 'Read the text below, then answer the question about the text.'
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
         line = csv_file[self.lineno]
@@ -245,7 +262,7 @@ class MultipleMatch(MultipleChoiceQuestion, BlockQuestion):
     block_length = 4
     question_location = 1
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
         self.instruction = csv_file[self.block*4][0]
@@ -267,7 +284,7 @@ class MultipleChoiceCloze(LineQuestion, MultipleChoiceQuestion):
     name = 'multiple-choice cloze'
     instruction = 'Select which word fits best into the gap. There is exactly 1 correct answer.'
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
         line = csv_file[self.lineno]
@@ -284,7 +301,7 @@ class OpenCloze(LineQuestion, OpenAnswerQuestion):
     instruction = 'Write the missing word (only 1) into the field below. Take care with spelling. There' \
                   ' may be multiple correct answers, but only enter one.'
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
 
         line = csv_file[self.lineno]
@@ -299,7 +316,7 @@ class ReadPicture(LineQuestion, MultipleChoiceQuestion):
     name = 'read picture'
     instruction = 'For the question below, choose the correct answer.'
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
         line = csv_file[self.lineno]
 
@@ -316,7 +333,7 @@ class WordFormation(LineQuestion, OpenAnswerQuestion):
     name = 'word formation'
     instruction = 'Modify the given stem word so that it fits into the gap in the sentence.'
 
-    def select_question(self, csv_file, file_length, used_qs):
+    def select_question(self, csv_file, file_length, used_qs, *args):
         super().select_question(csv_file, file_length, used_qs)
         line = csv_file[self.lineno]
 

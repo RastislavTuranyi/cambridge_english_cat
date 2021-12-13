@@ -32,10 +32,14 @@ class MainWindow(wx.Frame):
         # Add button to submit question
         self.submit = wx.Button(self.panel, label='Submit')
         self.submit.Bind(wx.EVT_BUTTON, self.on_next)
-        self.Bind(wx.EVT_CHAR_HOOK, self.on_next_enter)
+        if self.panel.hook == 'multiple':
+            self.Bind(wx.EVT_CHAR_HOOK, self.on_next_enter)
+        elif self.panel.hook == 'open':
+            self.Bind(wx.EVT_TEXT_ENTER, self.on_next)
         self.sizer.Add(self.submit, 0, wx.ALIGN_RIGHT)
 
         self.panel.SetSizer(self.sizer)
+        self.panel.Layout()
         self.main_panel.Layout()
 
     def new_question(self):
@@ -60,24 +64,47 @@ class MainWindow(wx.Frame):
 
 
 class TemplatePanel(wx.Panel):
+    hook = ''
+
     def __init__(self, parent, frame):
         super().__init__(parent)
         self.frame = frame
         self.question = rt.RichTextCtrl(self, size=(-1, 350), style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
 
+        self.add_instruction()
+
+        frame.sizer.Add(self.question, 0, wx.ALL | wx.EXPAND)
+
+    def add_instruction(self):
+        """
+        Writes the instructions for a given question. Uses <b> tags inside the question.instruction attribute to
+        highlight specific words.
+
+        :return: None
+        """
         self.question.Freeze()
-        self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        self.question.WriteText('. '.join([str(frame.tester.qno + 1), frame.tester.question.instruction]))
-        self.question.EndFont()
+        instructions = '. '.join([str(self.frame.tester.qno + 1), self.frame.tester.question.instruction]).split('<b>')
+
+        # Alternating, write with normal and bold fonts since that is how the instruction is split up at <b>
+        for index, instruction in enumerate(instructions):
+            if index % 2 == 0:
+                self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_SEMIBOLD))
+            else:
+                self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+            self.question.WriteText(instruction)
+            self.question.EndFont()
 
         self.question.Newline()
         self.question.Newline()
         self.question.Newline()
         self.question.Thaw()
 
-        frame.sizer.Add(self.question, 0, wx.ALL | wx.EXPAND)
-
     def add_image(self):
+        """
+        Add an image to the richtext field that holds the question. Should only be used for questions wich implement
+        images.
+        :return:  None
+        """
         self.question.Freeze()
         self.question.WriteImage(self.frame.tester.question.image, wx.BITMAP_TYPE_PNG)
         self.question.Newline()
@@ -85,6 +112,11 @@ class TemplatePanel(wx.Panel):
         self.question.Thaw()
 
     def add_options(self):
+        """
+        Add options into the richtext field that holds the question. These consist of multiple texts, each with a
+        title. If a titles do not come with the texts, capital alphabet should be used - ie. A, B, C, etc.
+        :return: None
+        """
         self.question.Freeze()
 
         for title, option in zip(self.frame.tester.question.titles, self.frame.tester.question.options):
@@ -146,6 +178,10 @@ class TemplatePanel(wx.Panel):
         self.question.Thaw()
 
     def add_newlines(self):
+        """
+        Adds 2 new lines, equivalent to 2 <br>s or 2 /n s. Effectively creates a line of space between paragraphs.
+        :return:
+        """
         self.question.Freeze()
         self.question.Newline()
         self.question.Newline()
@@ -153,6 +189,8 @@ class TemplatePanel(wx.Panel):
 
 
 class OpenAnswerPanel(TemplatePanel):
+    hook = 'open'
+
     def __init__(self, parent, frame):
         super().__init__(parent, frame)
 
@@ -160,7 +198,7 @@ class OpenAnswerPanel(TemplatePanel):
         self.question.Caret.Hide()
 
         # Add answer options
-        self.answer = wx.TextCtrl(self)
+        self.answer = wx.TextCtrl(self, style=wx.TE_PROCESS_ENTER)
         frame.sizer.Add(self.answer, 0, wx.ALL | wx.EXPAND)
 
     @abstractmethod
@@ -199,6 +237,8 @@ class WordFormationPanel(OpenAnswerPanel):
 
 
 class MultiplePanel(TemplatePanel):
+    hook = 'multiple'
+
     def __init__(self, parent, frame):
         super().__init__(parent, frame)
 
@@ -274,6 +314,10 @@ panel_classes = {'open cloze': OpenClozePanel, 'multiple-choice cloze': Multiple
 
 
 if __name__ == '__main__':
+    import wx.lib.inspection
+
     app = wx.App()
+    #wx.lib.inspection.InspectionTool().Show()
+
     frame = MainWindow()
     app.MainLoop()
