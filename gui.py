@@ -8,10 +8,10 @@ from tester import Tester
 
 class MainWindow(wx.Frame):
     def __init__(self):
-        super().__init__(parent=None, size=(700, 500),  title='Cambridge English placement test')
+        super().__init__(parent=None, size=(1000, 600),  title='Cambridge English placement test')
         self.main_panel = wx.Panel(self)
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
-
+        # TODO: play with boxsizers and gridsizers to perfect the layout
         # Create first question
         self.tester = Tester()
         self.tester.get_question()
@@ -48,6 +48,11 @@ class MainWindow(wx.Frame):
             child.Destroy()
         self.panel.Destroy()
 
+        if self.panel.hook == 'multiple':
+            self.Unbind(wx.EVT_CHAR_HOOK)
+        elif self.panel.hook == 'open':
+            self.Unbind(wx.EVT_TEXT_ENTER)
+
         # Build a new panel
         self.build_panel()
 
@@ -71,7 +76,9 @@ class TemplatePanel(wx.Panel):
         self.frame = frame
         self.question = rt.RichTextCtrl(self, size=(-1, 350), style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
 
+        self.question.Freeze()
         self.add_instruction()
+        self.question.Thaw()
 
         frame.sizer.Add(self.question, 0, wx.ALL | wx.EXPAND)
 
@@ -82,22 +89,29 @@ class TemplatePanel(wx.Panel):
 
         :return: None
         """
-        self.question.Freeze()
         instructions = '. '.join([str(self.frame.tester.qno + 1), self.frame.tester.question.instruction]).split('<b>')
 
         # Alternating, write with normal and bold fonts since that is how the instruction is split up at <b>
-        for index, instruction in enumerate(instructions):
-            if index % 2 == 0:
-                self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_SEMIBOLD))
-            else:
-                self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-            self.question.WriteText(instruction)
-            self.question.EndFont()
+        self.write_alternating_bold(instructions, wx.FONTWEIGHT_SEMIBOLD)
 
         self.question.Newline()
         self.question.Newline()
         self.question.Newline()
-        self.question.Thaw()
+
+    def write_alternating_bold(self, divided_text: list, default_bold_level):
+        for index, part in enumerate(divided_text):
+            if index % 2 == 0:
+                self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, default_bold_level))
+            else:
+                self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+            self.question.WriteText(part)
+            self.question.EndFont()
+
+    def write_section(self, font: wx.Font, text: str):
+        self.question.BeginFont(font)
+        self.question.WriteText(text)
+        self.question.EndFont()
+        self.question.Newline()
 
     def add_image(self):
         """
@@ -105,11 +119,7 @@ class TemplatePanel(wx.Panel):
         images.
         :return:  None
         """
-        self.question.Freeze()
         self.question.WriteImage(self.frame.tester.question.image, wx.BITMAP_TYPE_PNG)
-        self.question.Newline()
-        self.question.Newline()
-        self.question.Thaw()
 
     def add_options(self):
         """
@@ -117,75 +127,64 @@ class TemplatePanel(wx.Panel):
         title. If a titles do not come with the texts, capital alphabet should be used - ie. A, B, C, etc.
         :return: None
         """
-        self.question.Freeze()
-
         for title, option in zip(self.frame.tester.question.titles, self.frame.tester.question.options):
             self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
             self.question.WriteText(title)
             self.question.EndFont()
             self.question.Newline()
+
             self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
             self.question.WriteText(option)
             self.question.EndFont()
-            self.question.Newline()
-            self.question.Newline()
-
-        self.question.Thaw()
+            self.add_newlines()
 
     def add_question(self):
-        self.question.Freeze()
-        self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        self.question.WriteText(self.frame.tester.question.question)
-        self.question.EndFont()
-        self.question.Thaw()
+        self.write_section(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL),
+                           self.frame.tester.question.question)
 
     def add_text(self):
-        self.question.Freeze()
         # If there is a title, show it
         if self.frame.tester.question.title:
+
             self.question.BeginAlignment(wx.TEXT_ALIGNMENT_CENTRE)
-            self.question.BeginFont(wx.Font(16, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-            self.question.WriteText(self.frame.tester.question.title)
-            self.question.EndFont()
+            self.write_section(wx.Font(16, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD),
+                               self.frame.tester.question.title)
             self.question.EndAlignment()
-            self.question.Newline()
-            self.question.Newline()
+            self.add_newlines()
 
         # If there is a subtitle, show it
         if self.frame.tester.question.subtitle:
             self.question.BeginAlignment(wx.TEXT_ALIGNMENT_CENTRE)
-            self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL))
-            self.question.WriteText(self.frame.tester.question.subtitle)
-            self.question.EndFont()
+            self.write_section(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL),
+                               self.frame.tester.question.subtitle)
             self.question.EndAlignment()
-            self.question.Newline()
-            self.question.Newline()
+            self.add_newlines()
 
         # Show the text
         self.question.BeginAlignment(wx.TEXT_ALIGNMENT_JUSTIFIED)
         self.question.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
         first = True
-        for paragraph in self.frame.tester.question.text.split(r'\n\n'):
+        for paragraph in self.frame.tester.question.text.split(r'\n'):
             if first:
                 first = False
             else:
                 self.question.Newline()
-                self.question.Newline()
-            self.question.WriteText(paragraph)
+
+            if '<b>' in paragraph:
+                parts = paragraph.split('<b>')
+                self.write_alternating_bold(parts, wx.FONTWEIGHT_NORMAL)
+            else:
+                self.question.WriteText(paragraph)
         self.question.EndFont()
         self.question.EndAlignment()
-
-        self.question.Thaw()
 
     def add_newlines(self):
         """
         Adds 2 new lines, equivalent to 2 <br>s or 2 /n s. Effectively creates a line of space between paragraphs.
-        :return:
+        :return: None
         """
-        self.question.Freeze()
         self.question.Newline()
         self.question.Newline()
-        self.question.Thaw()
 
 
 class OpenAnswerPanel(TemplatePanel):
@@ -214,26 +213,60 @@ class KeyWordTransformationsPanel(OpenAnswerPanel):
         self.add_text()
         self.add_newlines()
 
-        self.question.Freeze()
-        self.question.BeginFont(wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        self.question.WriteText(self.frame.tester.question.keyword)
-        self.question.EndFont()
-        self.question.Thaw()
+        self.write_section(wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD),
+                           self.frame.tester.question.keyword)
 
+        self.add_newlines()
+        self.add_question()
+
+
+class MatchingPanel(OpenAnswerPanel):
+    def build_question(self):
+        self.add_image()
         self.add_newlines()
         self.add_question()
 
 
 class OpenClozePanel(OpenAnswerPanel):
     def build_question(self):
+        self.add_text()
+
+
+class QuestionsPanel(OpenAnswerPanel):
+    def build_question(self):
+        self.add_image()
+        self.add_newlines()
         self.add_question()
+        self.question.Newline()
+        self.write_section(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL),
+                           self.frame.tester.question.text)
+
+
+class ReadingComprehensionPanel(OpenAnswerPanel):
+    def build_question(self):
+        self.add_image()
+        self.add_newlines()
+        self.add_question()
+
+
+class ReadingPanel(OpenAnswerPanel):
+    def build_question(self):
+        self.add_text()
+        self.add_newlines()
+        self.add_question()
+
+
+class SpellingPanel(OpenAnswerPanel):
+    def build_question(self):
+        self.add_image()
 
 
 class WordFormationPanel(OpenAnswerPanel):
     def build_question(self):
-        self.add_question()
-        self.add_newlines()
         self.add_text()
+        self.add_newlines()
+        self.write_section(wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD),
+                           self.frame.tester.question.keyword)
 
 
 class MultiplePanel(TemplatePanel):
@@ -274,9 +307,17 @@ class GappedTextPanel(MultiplePanel):
         return self.frame.tester.question.titles
 
 
+class GappedTextAPanel(MultiplePanel):
+    def build_question(self):
+        self.add_text()
+        self.add_newlines()
+        self.add_image()
+        return self.frame.tester.question.options
+
+
 class MultipleChoiceClozePanel(MultiplePanel):
     def build_question(self):
-        self.add_question()
+        self.add_text()
         return self.frame.tester.question.options
 
 
@@ -284,6 +325,7 @@ class MultipleMatchPanel(MultiplePanel):
     def build_question(self):
         self.add_question()
         self.add_newlines()
+        self.add_text()
         self.add_options()
         return self.frame.tester.question.titles
 
@@ -310,7 +352,10 @@ class ReadPicturePanel(MultiplePanel):
 panel_classes = {'open cloze': OpenClozePanel, 'multiple-choice cloze': MultipleChoiceClozePanel,
                  'multiple choice': MultipleChoicePanel, 'multiple match': MultipleMatchPanel,
                  'read picture': ReadPicturePanel, 'word formation': WordFormationPanel, 'gapped text': GappedTextPanel,
-                 'key word transformations': KeyWordTransformationsPanel}
+                 'key word transformations': KeyWordTransformationsPanel,
+                 'gapped text A': GappedTextAPanel, 'questions': QuestionsPanel,
+                 'reading comprehension': ReadingComprehensionPanel, 'spelling': SpellingPanel,
+                 'reading': ReadingPanel, 'matching': MatchingPanel}
 
 
 if __name__ == '__main__':
