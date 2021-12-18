@@ -40,11 +40,20 @@ multiple match
 
 multiple-choice cloze
  - A single text with several gaps. Candidates must choose one word or phrase from a set of four to fill each gap.
-	text;correct answer;option A;option B;option C;option D;etc.
+	title;subtitle;full text
+	correct answer 1;correct answer 2;correct answer 3;etc.
+	question 1 option 1,question 1 option 2,question 1 option 3,question 1 option 4;question 2 option 1, question 2 option 2
+	    - full text = the text as it comes in the question, with all the gaps included. The gaps should have the standardised form.
+	    - all the options are in line #3, but note that options for 1 question are separated by commas (,), while questions
+	      are separated by semicolons (;)
 
 open cloze
  - A modified cloze test consisting of a text with several gaps. Candidates think of the word which best fits each gap.
-	text;accepted answer 1;accepted answer 2;etc.
+	title;subtitle;full text
+	question 1 accepted answer 1,question 1 accepted answer 2,etc.;question 2 accepted answer 1,etc.;etc.
+	    - full text = the text as it comes in the question, with all the gaps included. The gaps should have the standardised form.
+	    - all the answers are in line #2, but note that options for 1 question are separated by commas (,), while questions
+	      are separated by semicolons (;)
 
 read picture
  - Question of this type consists of multiple short, independent
@@ -53,4 +62,11 @@ read picture
 word formation
  - A text containing several gaps. Each gap corresponds to a word. The stems of the missing words are given beside 
    the text and must be changed to form the missing word.
-	text;word stem;accepted answer 1;accepted answer 2;etc.
+    title;subtitle;full text
+	question 1 accepted answer 1,question 1 accepted answer 2,etc.;question 2 accepted answer 1,etc.;etc.
+	stem word 1;stem word 2;stem word 3;stem word 4;etc.
+	    - full text = the text as it comes in the question, with all the gaps included. The gaps should have the standardised form.
+	        - PLEASE NOTE: the gap that is used as an example (denoted as 0) should be left at zero, then all following gaps
+	                       should be numbered starting from 2
+	    - all the answers are in line #2, but note that the various accepted answers for 1 question are separated by commas (,),
+	      while questions are separated by semicolons (;)
