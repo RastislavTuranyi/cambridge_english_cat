@@ -9,18 +9,22 @@ import numpy as np
 class Tester:
     def __init__(self):
         self.difficulty = B1
-        self.qno = -1
-        self.difficulties = ['B1']
-        self.qtypes = np.zeros(30, dtype=object)
+        self.qno = 0
+        self.difficulties = []
+        self.qtypes = []
         self.used_qs = {}
-        self.answers = np.zeros((30, 3), dtype=object)
+        self.correct_answers = []
+        self.submitted_answers = []
+        self.scores = []
 
     def get_question(self):
+        if self.qno == 30:
+            self.evaluate()
+        self.change_difficulty()
         qclass = self.get_question_class()
-        self.qno += 1
         self.question = qclass(self.difficulty.name, self.used_qs, self.qno)
         # Save the correct answers
-        self.answers[self.qno, 1] = '/'.join(self.question.answers)
+        self.correct_answers.append('/'.join(self.question.answers))
 
         # Save which question has been given to prevent repetition
         if isinstance(self.question, LineQuestion):
@@ -34,40 +38,80 @@ class Tester:
             else:
                 self.used_qs[self.question.csv_path] = [(self.question.block, self.question.qnumber)]
 
-        self.change_difficulty()
+        self.qno += 1
 
     def change_difficulty(self):
-        if self.qno < 4:
-            level_names = list(levels.keys())
-            previous_level_index = level_names.index(self.difficulties[self.qno])
+        if self.qno == 0:
+            new_level_index = self.difficulty.index
 
-            if self.answers[self.qno, 2] == 0:
-                new_level_index = previous_level_index - 1
+        elif self.qno < 5:
+            previous_level_index = levels.index(levels[self.difficulties[-1]])
+
+            if self.scores[self.qno-1] == 0 or self.difficulty.name == 'C2':  # If answer is incorrect or highest diff
+                if self.difficulty.name == 'AO':
+                    new_level_index = previous_level_index
+                else:
+                    new_level_index = previous_level_index - 1
             else:
                 new_level_index = previous_level_index + 1
 
-            self.difficulty = levels[level_names[new_level_index]]
+        elif self.qno == 5:
+            new_level_index = 0
+            for difficulty, score in zip(self.difficulties[:5], self.scores[:5]):
+                print(difficulty, score)
+                if score and difficulty > new_level_index:
+                    print(difficulty)
+                    new_level_index = difficulty
 
-        if self.qno == 4:
+        elif ((self.qno) % 5) != 0:
+            new_level_index = self.difficulty.index
 
+        else:
+            total_score = sum(self.scores[(self.qno-5):(self.qno+1)])
+            if total_score >= 5 and self.difficulty.name != 'C2':
+                new_level_index = self.difficulty.index + 1
+            elif total_score >= 3 or self.difficulty.name == 'C2' or self.difficulty.name == 'A0':
+                new_level_index = self.difficulty.index
+            else:
+                new_level_index = self.difficulty.index - 1
 
-        self.difficulties.append(self.difficulty.name)
-
+        self.difficulty = levels[new_level_index]
+        self.difficulties.append(self.difficulty.index)
 
     def get_question_class(self):
-        randnum = random.randint(0, len(self.difficulty)-1)
-        keys = list(self.difficulty.keys())
+        if self.qno <= 4:
+            try:
+                next_type = 'open cloze'
+            except KeyError:
+                try:
+                    next_type = 'reading'
+                except KeyError:
+                    next_type = 'spelling'
+        # TODO: make key word transformation sure to appear
+        else:
+            randnum = random.randint(0, len(self.difficulty)-1)
+            keys = list(self.difficulty.keys())
 
-        # Keep choosing random question type until it is different from the previous question
-        while keys[randnum] == self.qtypes[self.qno]:
-            randnum = random.randint(0, len(self.difficulty) - 1)
+            # Keep choosing random question type until it is different from the previous question
+            while keys[randnum] == self.qtypes[self.qno-1]:
+                randnum = random.randint(0, len(self.difficulty) - 1)
+            next_type = keys[randnum]
 
-        self.qtypes[self.qno+1] = keys[randnum]
-        return self.difficulty[keys[randnum]]
+        self.qtypes.append(next_type)
+        return self.difficulty[next_type]
 
     def check_answer(self):
-        self.answers[self.qno, 2] = self.question.check_answer(self.answers[self.qno, 0])
+        self.scores.append(self.question.check_answer(self.submitted_answers[self.qno-1]))
 
+    def evaluate(self):
+        final = np.zeroes(7)
+        asked_questions = np.zeroes(7)
+
+        for difficulty, score in zip(self.difficulties, self.scores):
+            final[difficulty] += score
+            asked_questions[difficulty] += 1
+
+        accuracies = final / asked_questions
 
 class Question(ABC):
     name = ''
@@ -127,11 +171,16 @@ class BlockQuestion(Question, ABC):
 
                 if (self.block, self.qnumber) not in used_qs.get(self.csv_path, []):
                     # Save title, subtitle, and text from the first line of the block
-                    self.title = csv_file[self.block * self.block_length][0]
-                    self.subtitle = csv_file[self.block * self.block_length][1]
-                    self.text = csv_file[self.block * self.block_length][2].replace(f'({self.qnumber + 1}) ..........',
-                                                                                    f'<b>[{kwargs["qno"] + 1}] '
-                                                                                    f'..........<b>')
+                    try:
+                        self.title = csv_file[self.block * self.block_length][0]
+                        self.subtitle = csv_file[self.block * self.block_length][1]
+                        self.text = csv_file[self.block * self.block_length][2].replace(f'({self.qnumber + 1}) '
+                                                                                        f'..........',
+                                                                                        f'<b>[{kwargs["qno"] + 1}] '
+                                                                                        f'..........<b>')
+                    except IndexError:
+                        print('Title, subtitle, and text could not be loaded',
+                              self.name, csv_file[self.block * self.block_length])
                     return  # break
 
     @abstractmethod
@@ -177,7 +226,6 @@ class BlockMultipleChoiceQuestion(BlockQuestion, MultipleChoiceQuestion, ABC):
         for (block, qnumber) in used_qs.get(self.csv_path, []):
             if block == self.block:
                 correct_answer = letters.find(csv_file[block * self.block_length + self.question_location][qnumber])
-                print(csv_file[block * self.block_length + 1], qnumber)
                 answer_text = self.get_correct_answer_text(block, correct_answer, csv_file, qnumber)
                 self.text = self.text.replace(''.join(['(', str(qnumber + 1), ') ..........']), answer_text)
 
@@ -265,8 +313,8 @@ class KeyWordTransformations(LineQuestion):
             return 0
 
         # Score the submitted answer against each possible correct answer
-        for answer_number, correct_answer in enumerate(self.answers.lower()):
-            halves = correct_answer.split('|')
+        for answer_number, correct_answer in enumerate(self.answers):
+            halves = correct_answer.lower().split('|')
             offset = [0]
 
             # Score the two halves (separated by |) separately
@@ -328,7 +376,7 @@ class MultipleChoiceA1(MultipleChoice):
     instruction = 'Read the text and choose the best answer.'
 
 
-class MultipleMatch(MultipleChoiceQuestion, BlockQuestion):
+class MultipleMatch(BlockMultipleChoiceQuestion):
     name = 'multiple match'
     block_length = 4
     question_location = 1
@@ -336,7 +384,7 @@ class MultipleMatch(MultipleChoiceQuestion, BlockQuestion):
     def select_question(self, csv_file, file_length, used_qs, **kwargs):
         super().select_question(csv_file, file_length, used_qs, **kwargs)
 
-        self.instruction = csv_file[self.block*4][0]
+        self.instruction = csv_file[self.block * self.block_length][0]
         self.question = self.questions[self.qnumber]
         self.answers = [csv_file[self.block*4+3][self.qnumber]]
         self.options = csv_file[self.block*4+2][1::2]
@@ -351,6 +399,9 @@ class MultipleMatch(MultipleChoiceQuestion, BlockQuestion):
                 self.title = csv_file[self.block*4+2][0]
             if csv_file[self.block*4+2][2]:
                 self.subtitle = csv_file[self.block*4+2][2]
+
+    def get_correct_answer_text(self, block, correct_answer, csv_file, qnumber):
+        return csv_file[block * self.block_length + 2][correct_answer * 2]
 
 
 class MultipleChoiceCloze(BlockMultipleChoiceQuestion):
@@ -496,39 +547,60 @@ class WordFormation(BlockOpenAnswerQuestion):
         self.overwrite_text(csv_file, used_qs)
 
 
-class NamedDict(dict):
-    def __init__(self, name, *args, **kwargs):
+class Difficulty(dict):
+    def __init__(self, name, index, grade_a, grade_b, grade_c, lower_level, *args, **kwargs):
         self.name = name
+        self.index = index
+        self.grade_a = grade_a
+        self.grade_b = grade_b
+        self.grade_c = grade_c
+        self.lower_level = lower_level
         super().__init__(*args, **kwargs)
 
+    def __eq__(self, other):
+        if isinstance(other, Difficulty):
+            return self.name == other.name
+        else:
+            return NotImplementedError
 
-A0 = NamedDict('A0', [('gapped text A', GappedTextA), ('questions', Questions), ('read picture', ReadPicture),
-                      ('reading comprehension', ReadingComprehension), ('spelling', Spelling)])
+    def __ne__(self, other):
+        eq = Difficulty.__eq__(self, other)
+        return NotImplementedError if eq is NotImplementedError else not eq
 
-A1 = NamedDict('A1', [('gapped text A', GappedTextA), ('matching', Matching), ('multiple choice', MultipleChoiceA1),
-                      ('multiple-choice cloze', MultipleChoiceCloze), ('reading', Reading)])
 
-A2 = NamedDict('A2', [('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
-                      ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
-                      ('read picture', ReadPicture)])
+A0 = Difficulty('A0', 0, None, None, None, None,
+                [('gapped text A', GappedTextA), ('questions', Questions), ('read picture', ReadPicture),
+                          ('reading comprehension', ReadingComprehension), ('spelling', Spelling)])
 
-B1 = NamedDict('B1', [('gapped text', GappedText), ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
-                      ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
-                      ('read picture', ReadPicture)])
+A1 = Difficulty('A1', 1,  None, None, None, None,
+                [('gapped text A', GappedTextA), ('matching', Matching), ('multiple choice', MultipleChoiceA1),
+                 ('multiple-choice cloze', MultipleChoiceCloze), ('reading', Reading)])
 
-B2 = NamedDict('B2', [('gapped text', GappedText), ('key word transformations', KeyWordTransformations),
-                      ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
-                      ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
-                      ('word formation', WordFormation)])
+A2 = Difficulty('A2', 2, 28/30, 28/30/140*133, 2/3, 13/30,
+                [('multiple choice', MultipleChoice), ('multiple-choice cloze', MultipleChoiceCloze),
+                 ('open cloze', OpenCloze), ('multiple match', MultipleMatch), ('read picture', ReadPicture)])
 
-C1 = NamedDict('C1', [('gapped text', GappedText), ('key word transformations', KeyWordTransformations),
-                      ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
-                      ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
-                      ('word formation', WordFormation)])
+B1 = Difficulty('B1', 3, 29/32, 29/32/160*153, 23/32, 13/32,
+                [('gapped text', GappedText), ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
+                 ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
+                  ('read picture', ReadPicture)])
 
-C2 = NamedDict('C2', [('gapped text', GappedText), ('key word transformations', KeyWordTransformations),
-                      ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
-                      ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
-                      ('word formation', WordFormation)])
+B2 = Difficulty('B2', 4, 37/42, 37/42/180*173, 24/42, 16/42,
+                [('gapped text', GappedText), ('key word transformations', KeyWordTransformations),
+                 ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
+                 ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
+                 ('word formation', WordFormation)])
 
-#levels = {'A0': A0, 'A1': A1, 'A2': A2, 'B1': B1, 'B2': B2, 'C1': C1, 'C2': C2}
+C1 = Difficulty('C1', 5, 43/50, 43/50/200*193, 32/50, 23/50,
+                [('gapped text', GappedText), ('key word transformations', KeyWordTransformations),
+                 ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
+                 ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
+                 ('word formation', WordFormation)])
+
+C2 = Difficulty('C2', 6, 36/44, 36/44/220*213, 28/44, 22/44,
+                [('gapped text', GappedText), ('key word transformations', KeyWordTransformations),
+                 ('multiple choice', MultipleChoice), ('multiple match', MultipleMatch),
+                 ('multiple-choice cloze', MultipleChoiceCloze), ('open cloze', OpenCloze),
+                 ('word formation', WordFormation)])
+
+levels = [A0, A1, A2, B1, B2, C1, C2]

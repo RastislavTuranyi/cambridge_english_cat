@@ -24,7 +24,7 @@ class MainWindow(wx.Frame):
     def build_panel(self):
         # Create sizer for the panel
         self.sizer = wx.BoxSizer(wx.VERTICAL)
-
+        print(self.tester.difficulty.name, self.tester.qno % 5, self.tester.scores)
         # Create an instance of a panel class depending on question type
         self.panel = panel_classes[self.tester.question.name](self.main_panel, self)
         self.main_sizer.Add(self.panel, 0, wx.EXPAND|wx.ALL)
@@ -57,9 +57,9 @@ class MainWindow(wx.Frame):
         self.build_panel()
 
     def on_next(self, event):
-        self.tester.answers[self.tester.qno, 0] = self.panel.get_answer()
+        self.tester.submitted_answers.append(self.panel.get_answer())
         self.tester.check_answer()
-        print(self.tester.answers[:5])
+        #print(self.tester.submitted_answers[:5])
         self.tester.get_question()
         self.new_question()
 
@@ -89,7 +89,7 @@ class TemplatePanel(wx.Panel):
 
         :return: None
         """
-        instructions = '. '.join([str(self.frame.tester.qno + 1), self.frame.tester.question.instruction]).split('<b>')
+        instructions = '. '.join([str(self.frame.tester.qno), self.frame.tester.question.instruction]).split('<b>')
 
         # Alternating, write with normal and bold fonts since that is how the instruction is split up at <b>
         self.write_alternating_bold(instructions, wx.FONTWEIGHT_SEMIBOLD)
@@ -325,7 +325,6 @@ class MultipleMatchPanel(MultiplePanel):
     def build_question(self):
         self.add_question()
         self.add_newlines()
-        self.add_text()
         self.add_options()
         return self.frame.tester.question.titles
 
