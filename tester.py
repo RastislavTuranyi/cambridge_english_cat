@@ -6,21 +6,75 @@ import random
 import numpy as np
 
 
+class TestEndError(Exception):
+    pass
+
+
+class LowCertaintyError(Exception):
+    def __init__(self, difficulty, extra_questions=5, *args):
+        self.difficulty = difficulty
+        self.extra_questions = extra_questions
+        super().__init__(args)
+
+
+class InconsistentResultsError(Exception):
+    def __init__(self, difficulty, extra_questions=5, *args):
+        self.difficulty = difficulty
+        self.extra_questions = extra_questions
+        super().__init__(args)
+
+
 class Tester:
+    """
+    The main class of the tester module, Tester manages the whole test.
+
+    :ivar difficulty: the Difficulty of the current question
+    :ivar difficulties: a list keeping track of all past Difficulty -ies
+    :ivar qno: the 0-based index of the current question
+    :ivar qtypes: keeps track of the Question class of all past questions
+    :ivar used_qs: keeps track of which questions from which file and which difficulty have been used in the past
+    :ivar correct_answers: logs the correct answers to all past questions
+    :ivar submitted_answers: logs the answers inputted by the user
+    :ivar scores: logs the points assigned for each answered question
+
+    :ivar grades: stores the grade (A-E) assigned to the user for each question difficulty (A0-C2)
+    :ivar certainty: stores the certainty with which each grade has been assigned based on the number of questions
+                     administered for a particular difficulty
+    :ivar result: the CEFR level assigned to the user
+    :ivar evaluation: a flavour text written based on the various results
+    :ivar shields: the number of shields assigned for A0 and A1 levels. Essentially replaces grades in these cases.
+    """
     def __init__(self):
+        # Dynamically altered during the test
         self.difficulty = B1
-        self.qno = 0
         self.difficulties = []
+        self.qno = 0
+        self.extra_questions = 0
+        self.skip_evaluate = False
+        # Variables keeping track of questions
         self.qtypes = []
         self.used_qs = {}
+        # Variable keeping track of answers
         self.correct_answers = []
         self.submitted_answers = []
         self.scores = []
 
+        # Filled at the test end by evaluate() method
+        self.grades = []
+        self.certainty = []
+        self.result = ''
+        self.evaluation = ''
+        self.shields = [0, 0]
+
     def get_question(self):
-        if self.qno == 30:
+        if self.qno == 30 and not self.skip_evaluate:
             self.evaluate()
-        self.change_difficulty()
+
+        if not self.skip_evaluate:
+            self.change_difficulty()
+        else:
+            self.skip_evaluate = False
+
         qclass = self.get_question_class()
         self.question = qclass(self.difficulty.name, self.used_qs, self.qno)
         # Save the correct answers
@@ -75,6 +129,10 @@ class Tester:
             else:
                 new_level_index = self.difficulty.index - 1
 
+            if (all(elem == self.difficulties[-1] for elem in self.difficulties[(self.qno-15):(self.qno+1)]) and
+                    new_level_index == self.difficulty.index) or self.qno == (30 + self.extra_questions):
+                raise TestEndError()
+
         self.difficulty = levels[new_level_index]
         self.difficulties.append(self.difficulty.index)
 
@@ -104,14 +162,163 @@ class Tester:
         self.scores.append(self.question.check_answer(self.submitted_answers[self.qno-1]))
 
     def evaluate(self):
-        final = np.zeroes(7)
-        asked_questions = np.zeroes(7)
+        final = np.zeros(7)
+        asked_questions = np.zeros(7)
 
-        for difficulty, score in zip(self.difficulties, self.scores):
+        for index, (difficulty, score) in enumerate(zip(self.difficulties, self.scores)):
             final[difficulty] += score
-            asked_questions[difficulty] += 1
+            asked_questions[difficulty] += 1 if self.qtypes[index] != 'key word transformations' else 2
 
         accuracies = final / asked_questions
+
+        for difficulty, (score, questions, accuracy) in enumerate(zip(final, asked_questions, accuracies)):
+            if questions > 15:
+                self.certainty.append((5, 'very high accuracy'))
+            elif questions > 10:
+                self.certainty.append((4, 'high accuracy'))
+            elif questions == 10:
+                self.certainty.append((3, 'fairly high accuracy'))
+            elif questions > 5:
+                self.certainty.append((2, 'considerable accuracy'))
+            elif questions > 2:
+                self.certainty.append((1, 'low accuracy'))
+            else:
+                self.certainty.append([0, 'too few questions'])
+                self.grades.append(None)
+                continue
+
+            if difficulty in [0, 1]:
+                if accuracy >= 0.65:
+                    self.grades.append('C')
+                else:
+                    self.grades.append('D')
+            elif accuracy >= levels[difficulty].grade_a:
+                self.grades.append('A')
+            elif accuracy >= levels[difficulty].grade_b:
+                self.grades.append('B')
+            elif accuracy >= levels[difficulty].grade_c:
+                self.grades.append('C')
+            elif accuracy >= levels[difficulty].lower_level:
+                self.grades.append('D')
+            else:
+                self.grades.append('E')
+
+        # Find the highest difficulty that has achieved at least a passing grade
+        highest_passed_difficulty = -1
+        for difficulty, grade in enumerate(self.grades):
+            if difficulty > highest_passed_difficulty and grade is not None and grade < 'D':
+                highest_passed_difficulty = difficulty
+
+        previous_level = levels[highest_passed_difficulty - 1].name
+        achieved_level = levels[highest_passed_difficulty].name
+        higher_level = levels[highest_passed_difficulty + 1].name
+
+        #Grde the pre-A1 and A1 exams regardless of if they have been passed
+        if highest_passed_difficulty in [0, 1] or (highest_passed_difficulty == -1 and
+                                                   (asked_questions[0] >= 5 or asked_questions[1] >= 5)):
+            # Assign A1 grade if 4+ shields have been achieved in A1 test, otherwise assign pre-A1
+            if self.grades[1] == 'C':
+                self.result = 'A1'
+            else:
+                self.result = 'pre-A1'
+
+            # Determine the number of shields
+            for difficulty, accuracy in enumerate(accuracies[:2]):
+                if accuracy >= 0.85:
+                    self.shields[difficulty] = 5
+                elif accuracy >= 0.65:
+                    self.shields[difficulty] = 4
+                elif accuracy >= 0.45:
+                    self.shields[difficulty] = 3
+                elif accuracy >= 0.25:
+                    self.shields[difficulty] = 2
+                else:
+                    if self.certainty[difficulty][0] == 0:
+                        self.shields[difficulty] = 0
+                    else:
+                        self.shields[difficulty] = 1
+
+            self.evaluation = ' '.join([self.evaluation, f'You have achieved {self.result[0]} level. You have obtained '
+                                                         f'{self.shields[0]} out of 5 shields on the pre-A1 exam and '
+                                                         f'{self.shields[1]} out of 5 shields on the A1 exam.'])
+            return  # Skip everything else
+        else:
+            if highest_passed_difficulty == -1:
+                self.evaluation = ' '.join([self.evaluation, 'Your level could not be determined because you have not '
+                                                             'passed any difficulty level.'])
+                raise InconsistentResultsError(A0, 15)
+            else:
+                self.evaluation = ' '.join([self.evaluation, f'You have passed the {achieved_level} exam and obtained a'
+                                                             f' {self.grades[highest_passed_difficulty]} grade in it.'])
+                if self.grades[highest_passed_difficulty] == 'A':
+                    self.evaluation += f' This indicates that your skills are of the higher level, {higher_level} ' \
+                                       f'instead.'
+                elif self.grades[highest_passed_difficulty] == 'B':
+                    self.evaluation += f' This shows you have very good grasp of this level of English. It indicates' \
+                                       f'that you are approaching the higher level, {higher_level}, though you are ' \
+                                       f'not quite there yet.'
+                elif self.grades[highest_passed_difficulty] == 'C':
+                    self.evaluation += f' This shows you have a solid grasp of this level, but there is still a room' \
+                                       f'to improve before you can start thinking of progressing to the next level, ' \
+                                       f'{higher_level}.'
+                else:
+                    raise NotImplementedError('This should never happen.')
+
+                if self.certainty[highest_passed_difficulty][0] < 3:
+                    raise LowCertaintyError(levels[highest_passed_difficulty])
+
+        # Show confusion if a lower difficulty than the highest passed has been failed
+        for index, grade in enumerate(self.grades[:highest_passed_difficulty]):
+            if grade is not None and grade >= 'D':
+                self.evaluation = ''.join([self.evaluation, ''])
+                raise InconsistentResultsError(levels[index])
+
+        # Add flavour text based on the lower level than the highest passed one
+        if (highest_passed_difficulty - 1) <= 1:
+            pass  # Don't do this for pre-A1 and A1 since they can't test higher levels
+        elif self.grades[highest_passed_difficulty - 1] is None:
+            self.evaluation = ' '.join([self.evaluation, f'Not enough information has been gathered from '
+                                                         f'{previous_level}-level questions to evaluate if they agree'
+                                                         f'or disagree with the evaluation above of {achieved_level}.'])
+            raise LowCertaintyError(levels[highest_passed_difficulty - 1])
+        elif self.grades[highest_passed_difficulty - 1] == 'A':
+            self.evaluation = ' '.join([self.evaluation, f'You have also achieved an A grade in the level below,'
+                                                         f'{previous_level}, which is equivalent to the '
+                                                         f'{achieved_level}, further proving that your skill is at the '
+                                                         f'{achieved_level} level.'])
+        else:
+            self.evaluation = ' '.join([self.evaluation, f'However, you have achieved only a '
+                                                         f'{self.grades[highest_passed_difficulty - 1]} grade in the '
+                                                         f'level below, {previous_level}, which indicates that your '
+                                                         f'skills are limited to this level and that you have not '
+                                                         f'achieved the {achieved_level} level.'])
+            raise InconsistentResultsError(levels[highest_passed_difficulty - 1])
+
+        # Add flavour text based on the level higher than the highest passed one
+        print(highest_passed_difficulty)
+        print(self.grades)
+        print(accuracies)
+        print(final, asked_questions)
+        if self.grades[highest_passed_difficulty + 1] is None:
+            self.evaluation = ' '.join([self.evaluation, f'Not enough information has been gathered from '
+                                                         f'{higher_level}-level questions to evaluate if they agree'
+                                                         f'or disagree with the evaluation above of {achieved_level}.'])
+            raise LowCertaintyError(levels[highest_passed_difficulty + 1])
+        elif self.grades[highest_passed_difficulty + 1] == 'D':
+            self.evaluation = ' '.join([self.evaluation, f'Furthermore, you have achieved a D grade in the higher-level'
+                                                         f'{higher_level} exam, which further indicates that your '
+                                                         f'skills are at the {achieved_level} level.'])
+            if self.grades[highest_passed_difficulty] == 'A':
+                raise InconsistentResultsError(levels[highest_passed_difficulty + 1])
+        elif self.grades[highest_passed_difficulty + 1] == 'E':
+            self.evaluation = ' '.join([self.evaluation, f'Unfortunately, despite your success in the '
+                                                         f'{achieved_level} exam, you have failed the higher-level one,'
+                                                         f' {higher_level} terribly, which puts the {achieved_level} '
+                                                         f'evaluation to question.'])
+            raise InconsistentResultsError(levels[highest_passed_difficulty + 1])
+
+        self.result = levels[highest_passed_difficulty].name
+
 
 class Question(ABC):
     name = ''
