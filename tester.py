@@ -140,7 +140,8 @@ class Tester:
                 new_level_index = self.difficulty.index - 1
 
             if (all(elem == self.difficulties[-1] for elem in self.difficulties[(self.qno-15):(self.qno+1)]) and
-                    new_level_index == self.difficulty.index) or self.qno == (30 + self.extra_questions):
+                    self.qno > 15 and new_level_index == self.difficulty.index) \
+                    or self.qno == (30 + self.extra_questions):
                 raise TestEndError()
 
         self.difficulty = levels[new_level_index]
@@ -219,7 +220,7 @@ class Tester:
         for difficulty, grade in enumerate(self.grades):
             if difficulty > highest_passed_difficulty and grade is not None and grade < 'D':
                 highest_passed_difficulty = difficulty
-
+        print(self.grades, self.certainty, highest_passed_difficulty)
         # Set shorthands for the highest passed level and its neighbours
         if highest_passed_difficulty > 0:
             previous_level = levels[highest_passed_difficulty - 1].name
@@ -486,7 +487,7 @@ class BlockOpenAnswerQuestion(BlockQuestion, OpenAnswerQuestion, ABC):
 
 class GappedText(BlockMultipleChoiceQuestion):
     name = 'gapped text'
-    instruction = 'Several sentences/paragraphs have been removed from the text below. Choose which sentence/parahraph' \
+    instruction = 'Several sentences/paragraphs have been removed from the text below. Choose which sentence/paragraph' \
                   ' has been removed from the highlighted gap.'
     block_length = 3
     question_location = 1
