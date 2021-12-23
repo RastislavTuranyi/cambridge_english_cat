@@ -140,7 +140,7 @@ class Tester:
                 new_level_index = self.difficulty.index - 1
 
             if (all(elem == self.difficulties[-1] for elem in self.difficulties[(self.qno-15):(self.qno+1)]) and
-                    new_level_index == self.difficulty.index) or self.qno == (10 + self.extra_questions):
+                    new_level_index == self.difficulty.index) or self.qno == (30 + self.extra_questions):
                 raise TestEndError()
 
         self.difficulty = levels[new_level_index]
