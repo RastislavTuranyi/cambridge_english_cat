@@ -10,7 +10,7 @@ class MainWindow(wx.Frame):
     def __init__(self):
         super().__init__(parent=None, size=(1000, 600),  title='Cambridge English placement test')
         self.main_panel = wx.Panel(self)
-        self.main_sizer = wx.BoxSizer(wx.VERTICAL)
+        self.main_sizer = wx.GridSizer(cols=1, rows=1, vgap=5, hgap=5)
         # TODO: play with boxsizers and gridsizers to perfect the layout
         # Create first question
         self.tester = Tester()
@@ -30,17 +30,17 @@ class MainWindow(wx.Frame):
         print(self.tester.difficulty.name, self.tester.qno % 5, self.tester.scores)
 
         if isinstance(self.tester.question, MultipleChoiceQuestion):
-            if len(self.tester.question.options) > 4:
-                self.button_sizer = wx.FlexGridSizer(cols=3, rows=4, vgap=5, hgap=5)
-            else:
-                self.button_sizer = wx.FlexGridSizer(cols=2, rows=4, vgap=5, hgap=5)
+            self.button_sizer = wx.FlexGridSizer(cols=3, rows=4, vgap=5, hgap=5)
+            self.button_sizer.AddGrowableCol(0, 1)
+            self.button_sizer.AddGrowableCol(1, 1)
+            self.button_sizer.AddGrowableCol(2, 1)
         else:
             self.button_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Create an instance of a panel class depending on question type
         self.panel = panel_classes[self.tester.question.name](self.main_panel, self)
 
-        self.main_sizer.Add(self.panel, 0, wx.EXPAND|wx.ALL)
+        self.main_sizer.Add(self.panel, 1, wx.EXPAND|wx.ALL)
 
         # Add button to submit question
         self.submit = wx.Button(self.panel, label='Submit')
@@ -200,7 +200,7 @@ class TemplatePanel(wx.Panel):
             self.add_newlines()
 
     def add_question(self):
-        self.write_section(wx.Font(13, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_SEMIBOLD),
+        self.write_section(wx.Font(13, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL),
                            self.frame.tester.question.question)
 
     def add_text(self):
@@ -211,7 +211,7 @@ class TemplatePanel(wx.Panel):
             self.write_section(wx.Font(16, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD),
                                self.frame.tester.question.title)
             self.question.EndAlignment()
-            self.question.Newline()
+            #self.question.Newline()
 
         # If there is a subtitle, show it
         if self.frame.tester.question.subtitle:
@@ -219,7 +219,7 @@ class TemplatePanel(wx.Panel):
             self.write_section(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL),
                                self.frame.tester.question.subtitle)
             self.question.EndAlignment()
-            self.question.Newline()
+            #self.question.Newline()
 
         # Show the text
         self.question.BeginAlignment(wx.TEXT_ALIGNMENT_JUSTIFIED)
@@ -336,22 +336,40 @@ class MultiplePanel(TemplatePanel):
     def __init__(self, parent, frame):
         super().__init__(parent, frame)
 
+        font = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
         labels = self.build_question()
         self.question.Caret.Hide()
+
 
         # Create the first radio button, so that they are a group
         self.radiobuttons = []
         self.radiobuttons.append(wx.RadioButton(self, label=labels[0], style=wx.RB_GROUP))
+        self.radiobuttons[0].SetFont(font)
         frame.button_sizer.Add(self.radiobuttons[0], 0, wx.LEFT)
-        # Create the rest of the buttons
-        for label in labels[1:]:
-            temp = wx.RadioButton(self, label=label)
-            self.radiobuttons.append(temp)
-            frame.button_sizer.Add(temp, 0, wx.LEFT)
 
-        if len(labels) < 8:
-            for i in range(8 - len(labels)):
-                frame.button_sizer.Add(wx.StaticText(), 0)
+        # Create the rest of the buttons
+        if len(labels) <= 4:
+            for i, label in enumerate(labels[1:]):
+                # Fill up cells with empty text so that the options appear on left below one another
+                frame.button_sizer.Add(wx.StaticText(self), 0)
+                frame.button_sizer.Add(wx.StaticText(self), 0)
+
+                temp = wx.RadioButton(self, label=label)
+                temp.SetFont(font)
+                self.radiobuttons.append(temp)
+                frame.button_sizer.Add(temp, 0, wx.LEFT)
+
+            frame.button_sizer.Add(wx.StaticText(self), 0)  # To make the button appear on the left
+        else:
+            for label in labels[1:]:
+                temp = wx.RadioButton(self, label=label)
+                temp.SetFont(font)
+                self.radiobuttons.append(temp)
+                frame.button_sizer.Add(temp, 0, wx.LEFT)
+
+            if len(labels) < 8:
+                for i in range(8 - len(labels)):
+                    frame.button_sizer.Add(wx.StaticText(self), 0)
 
     @abstractmethod
     def build_question(self):
@@ -443,11 +461,11 @@ class ConfirmationPopupWindow(wx.Dialog):
         self.sizer.Add(self.text, 0, wx.ALL | wx.EXPAND)
 
         self.continue_test = wx.Button(self.panel, label='Continue exam')
-        self.Bind(wx.EVT_BUTTON, self.on_continue_test)
+        self.continue_test.Bind(wx.EVT_BUTTON, self.on_continue_test)
         self.button_sizer.Add(self.continue_test, 0, wx.ALIGN_LEFT)
 
         self.show_results = wx.Button(self.panel, label='Show results')
-        self.Bind(wx.EVT_BUTTON, self.on_show_results)
+        self.show_results.Bind(wx.EVT_BUTTON, self.on_show_results)
         self.button_sizer.Add(self.show_results, 0, wx.ALIGN_RIGHT)
 
         self.sizer.Add(self.button_sizer, 1, wx.EXPAND)
@@ -479,9 +497,10 @@ class ResultsPanel(wx.Panel):
 
         self.text.Newline()
         self.text.BeginAlignment(wx.TEXT_ALIGNMENT_CENTRE)
-        self.text.BeginFont(wx.Font(16, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_EXTRABOLD))
+        self.text.BeginFont(wx.Font(22, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_EXTRABOLD))
         self.text.WriteText(frame.tester.result)
         self.text.EndFont()
+        self.text.Newline()
         self.text.EndAlignment()
 
         self.text.Newline()
@@ -493,23 +512,22 @@ class ResultsPanel(wx.Panel):
         self.text.Newline()
         self.text.Newline()
         self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        self.text.WriteText('CEFR level     Grade           Certainty')  # 5; 11
+        self.text.WriteText('CEFR level               Grade                     Certainty')  # 5; 11
         self.text.EndFont()
 
-        self.text.Newline()
         self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        self.text.Newline()
         difficulties = ['pre-A1', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
         for (index, grade), certainty in zip(reversed(list(enumerate(frame.tester.grades))),
                                              reversed(frame.tester.certainty)):
-            self.text.Newline()
             if grade is None:
                 continue
-            elif index > 1:
-                self.text.WriteText(' '*4 + difficulties[index] + ' '*11 + grade + ' '*7 + certainty[1])
+            elif index > 0:
+                self.text.Newline()
+                self.text.WriteText(' '*4 + difficulties[index] + ' '*30 + grade + ' '*25 + certainty[1])
             else:
-                self.text.WriteText(' '*2 + difficulties[index] + ' '*8 +
-                                    frame.tester.shields[index] + '/5' + ' '*6 + certainty[1])
+                self.text.Newline()
+                self.text.WriteText(' '*2 + difficulties[index] + ' '*25 +
+                                    str(frame.tester.shields[index]) + '/5' + ' '*20 + certainty[1])
         self.text.EndFont()
 
         self.text.Thaw()
@@ -517,6 +535,12 @@ class ResultsPanel(wx.Panel):
         frame.sizer.Add(self.text, 0, wx.ALL | wx.EXPAND)
         frame.sizer.AddGrowableCol(0, 1)
         frame.sizer.AddGrowableRow(0, 1)
+
+    def write_result(self, result):
+        self.text.BeginFont(wx.Font(22, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_EXTRABOLD))
+        self.text.WriteText(result)
+        self.text.EndFont()
+        self.text.Newline()
 
 
 if __name__ == '__main__':
