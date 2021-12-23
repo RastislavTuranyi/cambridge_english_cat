@@ -3,7 +3,7 @@ from abc import abstractmethod
 import wx
 import wx.richtext as rt
 
-from tester import Tester
+from tester import Tester, TestEndError, LowCertaintyError, InconsistentResultsError, MultipleChoiceQuestion
 
 
 class MainWindow(wx.Frame):
@@ -19,34 +19,51 @@ class MainWindow(wx.Frame):
         self.build_panel()
 
         self.main_panel.SetSizer(self.main_sizer)
+
+        self.Centre()
         self.Show()
 
     def build_panel(self):
         # Create sizer for the panel
-        self.sizer = wx.BoxSizer(wx.VERTICAL)
+        self.sizer = wx.FlexGridSizer(cols=1, rows=2, vgap=5, hgap=5)
+
         print(self.tester.difficulty.name, self.tester.qno % 5, self.tester.scores)
+
+        if isinstance(self.tester.question, MultipleChoiceQuestion):
+            if len(self.tester.question.options) > 4:
+                self.button_sizer = wx.FlexGridSizer(cols=3, rows=4, vgap=5, hgap=5)
+            else:
+                self.button_sizer = wx.FlexGridSizer(cols=2, rows=4, vgap=5, hgap=5)
+        else:
+            self.button_sizer = wx.BoxSizer(wx.VERTICAL)
+
         # Create an instance of a panel class depending on question type
         self.panel = panel_classes[self.tester.question.name](self.main_panel, self)
+
         self.main_sizer.Add(self.panel, 0, wx.EXPAND|wx.ALL)
 
         # Add button to submit question
         self.submit = wx.Button(self.panel, label='Submit')
         self.submit.Bind(wx.EVT_BUTTON, self.on_next)
+
+        # Allow ENTER key to be able to be used to submit questions
         if self.panel.hook == 'multiple':
             self.Bind(wx.EVT_CHAR_HOOK, self.on_next_enter)
         elif self.panel.hook == 'open':
             self.Bind(wx.EVT_TEXT_ENTER, self.on_next)
-        self.sizer.Add(self.submit, 0, wx.ALIGN_RIGHT)
+
+        self.button_sizer.Add(self.submit, 0, wx.ALIGN_RIGHT)
+        self.sizer.Add(self.button_sizer, 1, wx.EXPAND)
+
+        self.sizer.AddGrowableCol(0, 1)
+        self.sizer.AddGrowableRow(0, 1)
 
         self.panel.SetSizer(self.sizer)
         self.panel.Layout()
         self.main_panel.Layout()
 
     def new_question(self):
-        # Destroy the panel containing the old question
-        for child in self.panel.GetChildren():
-            child.Destroy()
-        self.panel.Destroy()
+        self.destroy_panel()
 
         if self.panel.hook == 'multiple':
             self.Unbind(wx.EVT_CHAR_HOOK)
@@ -56,16 +73,60 @@ class MainWindow(wx.Frame):
         # Build a new panel
         self.build_panel()
 
+    def destroy_panel(self):
+        # Destroy the panel containing the old question
+        for child in self.panel.GetChildren():
+            child.Destroy()
+
+        try:
+            self.panel.Destroy()
+        except RuntimeError:  # Ignore if the panel has been destroyed already
+            pass
+
     def on_next(self, event):
         self.tester.submitted_answers.append(self.panel.get_answer())
         self.tester.check_answer()
         #print(self.tester.submitted_answers[:5])
-        self.tester.get_question()
-        self.new_question()
+        # Normally, get new question and display it
+        try:
+            self.tester.get_question()
+            self.new_question()
+
+        # If the test should end, evaluate the results and try to show them
+        except TestEndError:
+            try:
+                self.tester.evaluate()
+                self.on_show_results(event)
+            except InconsistentResultsError as e:
+                popup = ConfirmationPopupWindow(self, 'End exam despite inconsistent results?', self.tester,
+                                                e.blurb, e.extra_questions, e.difficulty)
+            except LowCertaintyError as e:
+                popup = ConfirmationPopupWindow(self, 'End exam despite the result having low certainty?', self.tester,
+                                                e.blurb, e.extra_questions, e.difficulty)
 
     def on_next_enter(self, event):
         if event.GetKeyCode() == wx.WXK_RETURN:
             self.on_next(event)
+
+    def on_continue_test(self, extra_questions, difficulty):
+        self.tester.extra_questions += extra_questions
+        self.tester.difficulty = difficulty
+        self.tester.difficulties.append(difficulty.index)
+        self.tester.skip_evaluate = True
+
+        self.tester.get_question()
+        self.new_question()
+
+    def on_show_results(self, event):
+        self.destroy_panel()
+
+        self.sizer = wx.FlexGridSizer(cols=1, rows=2, vgap=5, hgap=5)
+        self.panel = ResultsPanel(self.main_panel, self)
+        self.main_sizer.Add(self.panel, 0, wx.EXPAND | wx.ALL)
+
+        self.panel.SetSizerAndFit(self.sizer)
+        self.panel.Layout()
+        self.main_panel.Layout()
 
 
 class TemplatePanel(wx.Panel):
@@ -74,13 +135,13 @@ class TemplatePanel(wx.Panel):
     def __init__(self, parent, frame):
         super().__init__(parent)
         self.frame = frame
-        self.question = rt.RichTextCtrl(self, size=(-1, 350), style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
+        self.question = rt.RichTextCtrl(self, style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
 
         self.question.Freeze()
         self.add_instruction()
         self.question.Thaw()
 
-        frame.sizer.Add(self.question, 0, wx.ALL | wx.EXPAND)
+        frame.sizer.Add(self.question, 1, wx.ALL | wx.EXPAND)
 
     def add_instruction(self):
         """
@@ -139,7 +200,7 @@ class TemplatePanel(wx.Panel):
             self.add_newlines()
 
     def add_question(self):
-        self.write_section(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL),
+        self.write_section(wx.Font(13, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_SEMIBOLD),
                            self.frame.tester.question.question)
 
     def add_text(self):
@@ -150,7 +211,7 @@ class TemplatePanel(wx.Panel):
             self.write_section(wx.Font(16, wx.FONTFAMILY_MODERN, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD),
                                self.frame.tester.question.title)
             self.question.EndAlignment()
-            self.add_newlines()
+            self.question.Newline()
 
         # If there is a subtitle, show it
         if self.frame.tester.question.subtitle:
@@ -158,7 +219,7 @@ class TemplatePanel(wx.Panel):
             self.write_section(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL),
                                self.frame.tester.question.subtitle)
             self.question.EndAlignment()
-            self.add_newlines()
+            self.question.Newline()
 
         # Show the text
         self.question.BeginAlignment(wx.TEXT_ALIGNMENT_JUSTIFIED)
@@ -198,7 +259,7 @@ class OpenAnswerPanel(TemplatePanel):
 
         # Add answer options
         self.answer = wx.TextCtrl(self, style=wx.TE_PROCESS_ENTER)
-        frame.sizer.Add(self.answer, 0, wx.ALL | wx.EXPAND)
+        frame.button_sizer.Add(self.answer, 0, wx.ALL | wx.EXPAND)
 
     @abstractmethod
     def build_question(self):
@@ -281,12 +342,16 @@ class MultiplePanel(TemplatePanel):
         # Create the first radio button, so that they are a group
         self.radiobuttons = []
         self.radiobuttons.append(wx.RadioButton(self, label=labels[0], style=wx.RB_GROUP))
-        frame.sizer.Add(self.radiobuttons[0], 0, wx.LEFT)
+        frame.button_sizer.Add(self.radiobuttons[0], 0, wx.LEFT)
         # Create the rest of the buttons
         for label in labels[1:]:
             temp = wx.RadioButton(self, label=label)
             self.radiobuttons.append(temp)
-            frame.sizer.Add(temp, 0, wx.LEFT)
+            frame.button_sizer.Add(temp, 0, wx.LEFT)
+
+        if len(labels) < 8:
+            for i in range(8 - len(labels)):
+                frame.button_sizer.Add(wx.StaticText(), 0)
 
     @abstractmethod
     def build_question(self):
@@ -357,11 +422,108 @@ panel_classes = {'open cloze': OpenClozePanel, 'multiple-choice cloze': Multiple
                  'reading': ReadingPanel, 'matching': MatchingPanel}
 
 
+class ConfirmationPopupWindow(wx.Dialog):
+    def __init__(self, parent, title, tester, message, extra_questions, difficulty):
+        super().__init__(parent, title=title)
+        self.tester = tester
+        self.parent = parent
+        self.extra_questions = extra_questions
+        self.difficulty = difficulty
+
+        self.panel = wx.Panel(self)
+        self.sizer = wx.FlexGridSizer(cols=1, rows=2, hgap=5, vgap=5)
+        self.button_sizer = wx.GridSizer(cols=2, rows=1, hgap=5, vgap=5)
+
+        self.text = rt.RichTextCtrl(self.panel, style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
+        self.text.Freeze()
+        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        self.text.WriteText(message)
+        self.text.EndFont()
+        self.text.Thaw()
+        self.sizer.Add(self.text, 0, wx.ALL | wx.EXPAND)
+
+        self.continue_test = wx.Button(self.panel, label='Continue exam')
+        self.Bind(wx.EVT_BUTTON, self.on_continue_test)
+        self.button_sizer.Add(self.continue_test, 0, wx.ALIGN_LEFT)
+
+        self.show_results = wx.Button(self.panel, label='Show results')
+        self.Bind(wx.EVT_BUTTON, self.on_show_results)
+        self.button_sizer.Add(self.show_results, 0, wx.ALIGN_RIGHT)
+
+        self.sizer.Add(self.button_sizer, 1, wx.EXPAND)
+        self.sizer.AddGrowableCol(0, 1)
+        self.sizer.AddGrowableRow(0, 1)
+
+        self.panel.SetSizer(self.sizer)
+        self.Show()
+
+    def on_continue_test(self, event):
+        self.parent.on_continue_test(self.extra_questions, self.difficulty)
+        self.Close()
+
+    def on_show_results(self, event):
+        self.parent.on_show_results(event)
+        self.Close()
+
+
+class ResultsPanel(wx.Panel):
+    def __init__(self, parent: wx.Panel, frame: MainWindow):
+        super().__init__(parent)
+
+        self.text = rt.RichTextCtrl(self, style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
+
+        self.text.Freeze()
+        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        self.text.WriteText('You have achieved')
+        self.text.EndFont()
+
+        self.text.Newline()
+        self.text.BeginAlignment(wx.TEXT_ALIGNMENT_CENTRE)
+        self.text.BeginFont(wx.Font(16, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_EXTRABOLD))
+        self.text.WriteText(frame.tester.result)
+        self.text.EndFont()
+        self.text.EndAlignment()
+
+        self.text.Newline()
+        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        self.text.WriteText('CEFR level. ' + frame.tester.evaluation)
+        self.text.EndFont()
+
+        self.text.Newline()
+        self.text.Newline()
+        self.text.Newline()
+        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.text.WriteText('CEFR level     Grade           Certainty')  # 5; 11
+        self.text.EndFont()
+
+        self.text.Newline()
+        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        self.text.Newline()
+        difficulties = ['pre-A1', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+        for (index, grade), certainty in zip(reversed(list(enumerate(frame.tester.grades))),
+                                             reversed(frame.tester.certainty)):
+            self.text.Newline()
+            if grade is None:
+                continue
+            elif index > 1:
+                self.text.WriteText(' '*4 + difficulties[index] + ' '*11 + grade + ' '*7 + certainty[1])
+            else:
+                self.text.WriteText(' '*2 + difficulties[index] + ' '*8 +
+                                    frame.tester.shields[index] + '/5' + ' '*6 + certainty[1])
+        self.text.EndFont()
+
+        self.text.Thaw()
+
+        frame.sizer.Add(self.text, 0, wx.ALL | wx.EXPAND)
+        frame.sizer.AddGrowableCol(0, 1)
+        frame.sizer.AddGrowableRow(0, 1)
+
+
 if __name__ == '__main__':
     import wx.lib.inspection
 
     app = wx.App()
-    #wx.lib.inspection.InspectionTool().Show()
+    # wx.lib.inspection.InspectionTool().Show()
 
     frame = MainWindow()
     app.MainLoop()
