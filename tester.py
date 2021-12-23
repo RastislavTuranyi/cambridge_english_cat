@@ -11,14 +11,21 @@ class TestEndError(Exception):
 
 
 class LowCertaintyError(Exception):
-    blurb = 'We have got an idea of which level your English language skills are at, but because we have not given ' \
-            'you enough questions of this or similar difficulties, we are not very certain that we are correct. If ' \
-            'you want to proceed to view your results nevertheless, you can do so, or you can take a couple more ' \
-            'questions to increase our certainty.'
-
-    def __init__(self, difficulty, extra_questions=5, *args):
+    def __init__(self, result, difficulty, extra_questions=5, *args):
         self.difficulty = difficulty
         self.extra_questions = extra_questions
+        if result == difficulty:
+            self.blurb = f'We have got an idea of which level your English language skills are at ({result}), but ' \
+                         'because we have not given you enough questions of this level, we are not very certain that ' \
+                         'we are correct. If you want to proceed to view your results nevertheless, you can do so, ' \
+                         'or you can take a couple more questions to increase our certainty.'
+        else:
+            self.blurb = f'We have got an idea of which level your English language skills are at ({result}) from ' \
+                         f'the questions of this difficulty you have answered. However, we try to give you questions ' \
+                         f'of various difficulties to increase our accuracy and improve our feedback. Unfortunately, ' \
+                         f'we failed to give you enough questions of the {difficulty.name} level. You don\'t need to' \
+                         f' do these questions and can directly proceed to see the results, but you can continue the ' \
+                         f'exam if you want better feedback.'
         super().__init__(args)
 
 
@@ -28,7 +35,7 @@ class InconsistentResultsError(Exception):
             'were able to answer more difficult questions. To make our assessment more accurate, you can answer a few' \
             ' more questions. Otherwise, you can proceed to view your results.'
 
-    def __init__(self, difficulty, extra_questions=5, *args):
+    def __init__(self, result, difficulty, extra_questions=5, *args):
         self.difficulty = difficulty
         self.extra_questions = extra_questions
         super().__init__(args)
@@ -55,6 +62,7 @@ class Tester:
     :ivar shields: the number of shields assigned for A0 and A1 levels. Essentially replaces grades in these cases.
     """
     def __init__(self):
+        self.default_questions = 30
         # Dynamically altered during the test
         self.difficulty = B1
         self.difficulties = []
@@ -77,9 +85,6 @@ class Tester:
         self.shields = [0, 0]
 
     def get_question(self):
-        if self.qno == 30 and not self.skip_evaluate:
-            self.evaluate()
-
         if not self.skip_evaluate:
             self.change_difficulty()
         else:
@@ -134,14 +139,17 @@ class Tester:
             total_score = sum(self.scores[(self.qno-5):(self.qno+1)])
             if total_score >= 5 and self.difficulty.name != 'C2':
                 new_level_index = self.difficulty.index + 1
-            elif total_score >= 3 or self.difficulty.name == 'C2' or self.difficulty.name == 'A0':
+            elif (total_score >= 3 or (self.difficulty.name == 'C2' and total_score >= 3)
+                  or self.difficulty.name == 'A0'):
                 new_level_index = self.difficulty.index
             else:
                 new_level_index = self.difficulty.index - 1
 
             if (all(elem == self.difficulties[-1] for elem in self.difficulties[(self.qno-15):(self.qno+1)]) and
-                    self.qno > 15 and new_level_index == self.difficulty.index) \
-                    or self.qno == (30 + self.extra_questions):
+                    self.qno > 15 and new_level_index == self.difficulty.index):
+                self.default_questions = self.qno
+                raise TestEndError()
+            elif self.qno == (self.default_questions + self.extra_questions) and not self.skip_evaluate:
                 raise TestEndError()
 
         self.difficulty = levels[new_level_index]
@@ -299,7 +307,7 @@ class Tester:
                     raise NotImplementedError('This should never happen.')
 
                 if self.certainty[highest_passed_difficulty][0] < 3:
-                    raise LowCertaintyError(levels[highest_passed_difficulty])
+                    raise LowCertaintyError(self.result, levels[highest_passed_difficulty])
 
         # Show confusion if a lower difficulty than the highest passed has been failed
         for index, grade in enumerate(self.grades[:highest_passed_difficulty]):
@@ -312,7 +320,7 @@ class Tester:
             self.evaluation = ' '.join([self.evaluation, f'Not enough information has been gathered from '
                                                          f'{previous_level}-level questions to evaluate if they agree'
                                                          f'or disagree with the evaluation above of {achieved_level}.'])
-            raise LowCertaintyError(levels[highest_passed_difficulty - 1])
+            raise LowCertaintyError(self.result, levels[highest_passed_difficulty - 1])
         elif self.grades[highest_passed_difficulty - 1] == 'A':
             self.evaluation = ' '.join([self.evaluation, f'You have also achieved an A grade in the level below,'
                                                          f'{previous_level}, which is equivalent to the '
@@ -333,7 +341,7 @@ class Tester:
             self.evaluation = ' '.join([self.evaluation, f'Not enough information has been gathered from '
                                                          f'{higher_level}-level questions to evaluate if they agree'
                                                          f'or disagree with the evaluation above of {achieved_level}.'])
-            raise LowCertaintyError(levels[highest_passed_difficulty + 1])
+            raise LowCertaintyError(self.result, levels[highest_passed_difficulty + 1])
         elif self.grades[highest_passed_difficulty + 1] == 'D':
             self.evaluation = ' '.join([self.evaluation, f'Furthermore, you have achieved a D grade in the higher-level'
                                                          f'{higher_level} exam, which further indicates that your '
