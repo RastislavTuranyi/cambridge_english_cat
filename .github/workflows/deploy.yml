@@ -22,18 +22,11 @@ jobs:
     - name: Create bundle
       run: |
         cd %GITHUB_WORKSPACE%
-        pyinstaller gui.py --noconsole --paths "%RUNNER_TOOL_CACHE%\Python\3.9.9\x64\lib\site-packages" --paths "%GITHUB_WORKSPACE%" --add-data "%GITHUB_WORKSPACE%\tester.py;." --add-data "%GITHUB_WORKSPACE%\__init__.py;."
-      shell: cmd
-    - name: Copy files
-      run: |
-        xcopy "%RUNNER_TOOL_CACHE%\Python\3.9.9\x64\lib\site-packages\wx" "%GITHUB_WORKSPACE%\dist\gui\wx\" /E /H /C /Y
-        mkdir "%GITHUB_WORKSPACE%\dist\gui\Data"
-        xcopy "%GITHUB_WORKSPACE%\Data" "%GITHUB_WORKSPACE%\dist\gui\Data\" /E /H
-        rename "%GITHUB_WORKSPACE%\dist\gui\gui.exe" "English CAT.exe"
+        pyinstaller gui.py  --noconsole --collect-all wx --name CECAT --add-data "Data\;Data" --exclude-module tk --exclude-module tcl --exclude-module tcl8 --onefile 
       shell: cmd
     - name: Upload
       uses: actions/upload-artifact@v2
       with:
         name: CECAT
-        path: ${{ github.workspace }}\dist\gui
+        path: ${{ github.workspace }}\dist\CECAT.exe
         retention-days: 90
