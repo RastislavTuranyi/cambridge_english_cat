@@ -26,7 +26,7 @@ jobs:
         rmdir"%GITHUB_WORKSPACE%\dist\gui\wx"
         xcopy "%RUNNER_TOOL_CACHE%\Python\3.9.9\x64\Lib\sit-packages\wx" "%GITHUB_WORKSPACE%\dist\gui" /E /H
         xcopy "%GITHUB_WORKSPACE%\Data" "%GITHUB_WORKSPACE%\dist\gui" /E /H
-        rename "%GITHUB_WORKSPACE%\dist\gui\gui.exe" "%GITHUB_WORKSPACE%\dist\gui\English CAT"
+        rename "%GITHUB_WORKSPACE%\dist\gui\gui.exe" "English CAT.exe"
       shell: cmd
     - name: Upload
       uses: actions/upload-artifact@v2
