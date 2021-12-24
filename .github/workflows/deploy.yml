@@ -22,7 +22,7 @@ jobs:
     - name: Create bundle
       run: |
         cd %GITHUB_WORKSPACE%
-        pyinstaller gui.py  --noconsole --collect-all wx --name CECAT --add-data "Data\;Data" --exclude-module tk --exclude-module tcl --exclude-module tcl8 --onefile 
+        pyinstaller gui.py  --noconsole --name CECAT --paths "%RUNNER_TOOL_CACHE%\Python\3.9.9\x64\lib\site-packages" --paths "%GITHUB_WORKSPACE%" --add-data "Data\;Data" --collect-all wx --exclude-module tk --exclude-module tcl --exclude-module tcl8 --onefile 
       shell: cmd
     - name: Upload
       uses: actions/upload-artifact@v2
