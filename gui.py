@@ -121,16 +121,10 @@ class MainWindow(wx.Frame):
     def on_show_results(self, event):
         self.hide_panel()
 
-        self.sizer = wx.FlexGridSizer(cols=1, rows=2, vgap=5, hgap=5)
         self.panel = ResultsPanel(self.main_panel, self)
         self.main_sizer.Add(self.panel, 0, wx.EXPAND | wx.ALL)
 
-        self.button = wx.Button(self.panel, label='Review answers')
-        self.button.Bind(wx.EVT_BUTTON, self.on_review_results)
-        self.sizer.Add(self.button, 0, wx.ALIGN_RIGHT)
-
-        self.panel.SetSizerAndFit(self.sizer)
-        self.panel.Layout()
+        self.panel.button.Bind(wx.EVT_BUTTON, self.on_review_results)
         self.main_panel.Layout()
 
     def on_review_results(self, event):
@@ -519,6 +513,8 @@ class ConfirmationPopupWindow(wx.Dialog):
 class ResultsPanel(wx.Panel):
     def __init__(self, parent: wx.Panel, frame: MainWindow):
         super().__init__(parent)
+        self.sizer = wx.FlexGridSizer(cols=1, rows=3, vgap=5, hgap=5)
+        self.SetBackgroundColour(wx.Colour(255, 255, 255))
 
         self.text = rt.RichTextCtrl(self, style=rt.RE_MULTILINE | rt.RE_READONLY | wx.BORDER_NONE)
 
@@ -540,33 +536,71 @@ class ResultsPanel(wx.Panel):
         self.text.WriteText('CEFR level. ' + frame.tester.evaluation)
         self.text.EndFont()
 
-        self.text.Newline()
-        self.text.Newline()
-        self.text.Newline()
-        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
-        self.text.WriteText('CEFR level               Grade                     Certainty')  # 5; 11
-        self.text.EndFont()
-
-        self.text.BeginFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        difficulties = ['pre-A1', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
-        for (index, grade), certainty in zip(reversed(list(enumerate(frame.tester.grades))),
-                                             reversed(frame.tester.certainty)):
-            if grade is None:
-                continue
-            elif index > 0:
-                self.text.Newline()
-                self.text.WriteText(' '*4 + difficulties[index] + ' '*30 + grade + ' '*25 + certainty[1])
-            else:
-                self.text.Newline()
-                self.text.WriteText(' '*2 + difficulties[index] + ' '*25 +
-                                    str(frame.tester.shields[index]) + '/5' + ' '*20 + certainty[1])
-        self.text.EndFont()
-
         self.text.Thaw()
 
-        frame.sizer.Add(self.text, 0, wx.ALL | wx.EXPAND)
-        frame.sizer.AddGrowableCol(0, 1)
-        frame.sizer.AddGrowableRow(0, 1)
+        self.sizer.Add(self.text, 0, wx.ALL | wx.EXPAND)
+        self.sizer.AddGrowableCol(0, 1)
+        self.sizer.AddGrowableRow(0, 1)
+        self.sizer.AddGrowableRow(1, 1)
+
+        self.table_sizer = wx.FlexGridSizer(cols=5, rows=(len([i for i in frame.tester.grades if i is not None]) + 1),
+                                            vgap=5, hgap=5)
+
+        font = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+        header_font = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_SEMIBOLD)
+        header_font.SetFaceName('Segoe UI Symbol')
+
+        header1 = wx.StaticText(self, label='CEFR\u2007level')
+        header1.SetFont(header_font)
+        self.table_sizer.Add(header1, 0, wx.ALIGN_CENTER)
+
+        header2 = wx.StaticText(self, label='Score')
+        header2.SetFont(header_font)
+        self.table_sizer.Add(header2, 0, wx.ALIGN_CENTER)
+
+        header3 = wx.StaticText(self, label='Percentage')
+        header3.SetFont(header_font)
+        self.table_sizer.Add(header3, 0, wx.ALIGN_CENTER)
+
+        header4 = wx.StaticText(self, label='Grade')
+        header4.SetFont(header_font)
+        self.table_sizer.Add(header4, 0, wx.ALIGN_CENTER)
+
+        header5 = wx.StaticText(self, label='Certainty')
+        header5.SetFont(header_font)
+        self.table_sizer.Add(header5, 0, wx.ALIGN_CENTER)
+
+        difficulties = ['pre-A1', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+        columns = [None for __ in range(5)]
+        for (index, grade), certainty, score, total_qs in zip(reversed(list(enumerate(frame.tester.grades))),
+                                                              reversed(frame.tester.certainty),
+                                                              reversed(frame.tester.final),
+                                                              reversed(frame.tester.asked_questions)):
+            if grade is None:
+                continue
+
+            columns[0] = wx.StaticText(self, label=difficulties[index])
+            columns[1] = wx.StaticText(self, label=f'{int(score)}/{int(total_qs)}')
+            columns[2] = wx.StaticText(self, label=f'{round(score / total_qs * 100, 2)}%')
+            if index > 1:
+                columns[3] = wx.StaticText(self, label=grade)
+            else:
+                columns[3] = wx.StaticText(self, label=f'{frame.tester.shields[index]}/5')
+            columns[4] = wx.StaticText(self, label=certainty[1])
+
+            for column in columns:
+                column.SetFont(font)
+                self.table_sizer.Add(column, 0, wx.ALIGN_CENTER)
+
+        for i in range(5):
+            self.table_sizer.AddGrowableCol(i, 1)
+        self.sizer.Add(self.table_sizer, 1, wx.EXPAND)
+
+        self.button = wx.Button(self, label='Review answers')
+        self.sizer.Add(self.button, 0, wx.ALIGN_RIGHT)
+
+        self.SetSizerAndFit(self.sizer)
+        self.Layout()
 
 
 class ReviewPanel(wx.Panel):
@@ -578,7 +612,9 @@ class ReviewPanel(wx.Panel):
         self.SetBackgroundColour(wx.Colour(255, 255, 255))
 
         header_font = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_SEMIBOLD)
-        header1 = wx.StaticText(self, label='Question number')
+        header_font.SetFaceName('Segoe UI Symbol')
+
+        header1 = wx.StaticText(self, label='Question\u2007number')
         header1.SetFont(header_font)
         frame.sizer.Add(header1, 0, wx.ALIGN_CENTER)
 
@@ -586,7 +622,7 @@ class ReviewPanel(wx.Panel):
         header2.SetFont(header_font)
         frame.sizer.Add(header2, 0, wx.ALIGN_CENTER)
 
-        header3 = wx.StaticText(self, label='Points obtained')
+        header3 = wx.StaticText(self, label='Points\u2007obtained')
         header3.SetFont(header_font)
         frame.sizer.Add(header3, 0, wx.ALIGN_CENTER)
 
@@ -594,7 +630,7 @@ class ReviewPanel(wx.Panel):
         header4.SetFont(header_font)
         frame.sizer.Add(header4, 0, wx.ALIGN_CENTER)
 
-        header5 = wx.StaticText(self, label='Correct answer')
+        header5 = wx.StaticText(self, label='Correct\u2007answer')
         header5.SetFont(header_font)
         frame.sizer.Add(header5, 0, wx.ALIGN_CENTER)
 

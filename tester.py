@@ -7,11 +7,16 @@ import numpy as np
 
 
 class TestEndError(Exception):
+    """An error class used to signal that the exam has come to an end."""
     pass
 
 
 class LowCertaintyError(Exception):
-    def __init__(self, result, difficulty, extra_questions=5, *args):
+    """
+    An error class used to signal that not enough questions have been asked at the difficulty determined to be
+    the result or its adjacent difficulties.
+    """
+    def __init__(self, result: str, difficulty, extra_questions=5, *args):
         self.difficulty = difficulty
         self.extra_questions = extra_questions
         if result == difficulty:
@@ -30,12 +35,16 @@ class LowCertaintyError(Exception):
 
 
 class InconsistentResultsError(Exception):
+    """
+    An error class used to signal that the results of questions of different difficulties are not consistent with
+    each other.
+    """
     blurb = 'This software uses questions of different difficulties to determine the level of your English language ' \
             'skills. Unfortunately, this failed to happen, because you were not able to answer easier questions but ' \
             'were able to answer more difficult questions. To make our assessment more accurate, you can answer a few' \
             ' more questions. Otherwise, you can proceed to view your results.'
 
-    def __init__(self, result, difficulty, extra_questions=5, *args):
+    def __init__(self, difficulty, extra_questions=5, *args):
         self.difficulty = difficulty
         self.extra_questions = extra_questions
         super().__init__(args)
@@ -78,14 +87,20 @@ class Tester:
         self.scores = []
 
         # Filled at the test end by evaluate() method
-        self.grades = ['' for __ in range(7)]
+        self.grades = [None for __ in range(7)]
         self.certainty = [(0, '') for __ in range(7)]
         self.result = ''
         self.evaluation = ''
         self.shields = [0, 0]
+        self.final = np.zeros(7, dtype=float)
+        self.asked_questions = np.zeros(7, dtype=float)
 
     def get_question(self):
-        if not self.skip_evaluate:
+        """
+        Sets up a new question by selecting an appropriate difficulty and class and logging important information.
+        :return: None
+        """
+        if not self.skip_evaluate:  # Keep the difficulty if the flag is True
             self.change_difficulty()
         else:
             self.skip_evaluate = False
@@ -110,11 +125,12 @@ class Tester:
         self.qno += 1
 
     def change_difficulty(self):
+        """Determines the difficulty of the new question."""
         if self.qno == 0:
             new_level_index = self.difficulty.index
 
+        # At the beginning, immediately adjust difficulty up or down depending on if the answer was correct
         elif self.qno < 5:
-            # At the beginning, immediately adjust difficulty up or down depending on if the answer is correct
             previous_level_index = levels.index(levels[self.difficulties[-1]])
 
             if self.scores[self.qno-1] == 0 or self.difficulty.name == 'C2':  # If answer is incorrect or highest diff
@@ -125,22 +141,25 @@ class Tester:
             else:
                 new_level_index = previous_level_index + 1
 
+        # After first 5 qs, give questions of the highest difficulty which has been answered correctly
         elif self.qno == 5:
-            # After first 5 qs, give questions of the highest difficulty which has been answered correctly
             new_level_index = 0
             for difficulty, score in zip(self.difficulties[:5], self.scores[:5]):
                 if score and difficulty > new_level_index:
                     new_level_index = difficulty
 
+        # Use blocks of 5 questions
         elif ((self.qno) % 5) != 0:
             new_level_index = self.difficulty.index
 
+        # Adjust difficulty on every 5th question
         else:
-            total_score = sum(self.scores[(self.qno-5):(self.qno+1)])
-            if total_score >= 5 and self.difficulty.name != 'C2':
+            total_score = sum(self.scores[(self.qno-5):(self.qno+1)])  # score of the previous block
+
+            if total_score >= 5 and self.difficulty.name != 'C2':  # Move up if score > 85%
                 new_level_index = self.difficulty.index + 1
             elif (total_score >= 3 or (self.difficulty.name == 'C2' and total_score >= 3)
-                  or self.difficulty.name == 'A0'):
+                  or self.difficulty.name == 'A0'):  # Keep the current difficulty above 60%
                 new_level_index = self.difficulty.index
             else:
                 new_level_index = self.difficulty.index - 1
@@ -149,7 +168,7 @@ class Tester:
                     self.qno > 15 and new_level_index == self.difficulty.index):
                 self.default_questions = self.qno
                 raise TestEndError()
-            elif self.qno == (self.default_questions + self.extra_questions) and not self.skip_evaluate:
+            elif self.qno == (self.default_questions + self.extra_questions):
                 raise TestEndError()
 
         self.difficulty = levels[new_level_index]
@@ -181,17 +200,16 @@ class Tester:
 
     def evaluate(self):
         self.evaluation = ''
-        final = np.zeros(7, dtype=float)
-        asked_questions = np.zeros(7, dtype=float)
 
         for index, (difficulty, score) in enumerate(zip(self.difficulties, self.scores)):
-            final[difficulty] += score
-            asked_questions[difficulty] += 1 if self.qtypes[index] != 'key word transformations' else 2
+            self.final[difficulty] += score
+            self.asked_questions[difficulty] += 1 if self.qtypes[index] != 'key word transformations' else 2
 
         # Divide such that 0/0 = 0
-        accuracies = np.divide(final, asked_questions, out=np.zeros_like(final), where=asked_questions!=0)
+        accuracies = np.divide(self.final, self.asked_questions,
+                               out=np.zeros_like(self.final), where=self.asked_questions!=0)
 
-        for difficulty, (score, questions, accuracy) in enumerate(zip(final, asked_questions, accuracies)):
+        for difficulty, (score, questions, accuracy) in enumerate(zip(self.final, self.asked_questions, accuracies)):
             if questions > 15:
                 self.certainty[difficulty] = (5, 'very high accuracy')
             elif questions > 10:
@@ -228,7 +246,7 @@ class Tester:
         for difficulty, grade in enumerate(self.grades):
             if difficulty > highest_passed_difficulty and grade is not None and grade < 'D':
                 highest_passed_difficulty = difficulty
-        print(self.grades, self.certainty, highest_passed_difficulty)
+
         # Set shorthands for the highest passed level and its neighbours
         if highest_passed_difficulty > 0:
             previous_level = levels[highest_passed_difficulty - 1].name
@@ -238,7 +256,7 @@ class Tester:
 
         # Grade the pre-A1 and A1 exams regardless of if they have been passed
         if highest_passed_difficulty in [0, 1] or (highest_passed_difficulty == -1 and
-                                                   (asked_questions[0] >= 5 or asked_questions[1] >= 5)):
+                                                   (self.asked_questions[0] >= 5 or self.asked_questions[1] >= 5)):
             # Assign A1 grade if 4+ shields have been achieved in A1 test, otherwise assign pre-A1
             if self.grades[1] == 'C':
                 self.result = 'A1'
@@ -320,7 +338,7 @@ class Tester:
             self.evaluation = ' '.join([self.evaluation, f'Not enough information has been gathered from '
                                                          f'{previous_level}-level questions to evaluate if they agree'
                                                          f'or disagree with the evaluation above of {achieved_level}.'])
-            raise LowCertaintyError(self.result, levels[highest_passed_difficulty - 1])
+            raise LowCertaintyError(self.result, levels[highest_passed_difficulty - 1], 10)
         elif self.grades[highest_passed_difficulty - 1] == 'A':
             self.evaluation = ' '.join([self.evaluation, f'You have also achieved an A grade in the level below,'
                                                          f'{previous_level}, which is equivalent to the '
@@ -790,7 +808,8 @@ class WordFormation(BlockOpenAnswerQuestion):
 
 
 class Difficulty(dict):
-    def __init__(self, name, index, grade_a, grade_b, grade_c, lower_level, *args, **kwargs):
+    def __init__(self, name: str, index: int, grade_a: float, grade_b: float, grade_c: float, lower_level: float,
+                 *args, **kwargs):
         self.name = name
         self.index = index
         self.grade_a = grade_a
@@ -808,6 +827,9 @@ class Difficulty(dict):
     def __ne__(self, other):
         eq = Difficulty.__eq__(self, other)
         return NotImplementedError if eq is NotImplementedError else not eq
+
+    def __str__(self):
+        return f'({self.name}, {super().__str__()})'
 
 
 A0 = Difficulty('A0', 0, None, None, None, None,
