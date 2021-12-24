@@ -22,7 +22,7 @@ jobs:
     - name: Create bundle
       run: |
         cd %GITHUB_WORKSPACE%
-        pyinstaller gui.py --noconsole --paths "%RUNNER_TOOL_CACHE%\Python\3.9.9\x64\lib\site-packages" --paths "%GITHUB_WORKSPACE%"
+        pyinstaller gui.py --noconsole --paths "%RUNNER_TOOL_CACHE%\Python\3.9.9\x64\lib\site-packages" --paths "%GITHUB_WORKSPACE%" --add-data "%GITHUB_WORKSPACE%\tester.py;." --add-data "%GITHUB_WORKSPACE%\__init__.py;."
       shell: cmd
     - name: Copy files
       run: |
