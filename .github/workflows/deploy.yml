@@ -34,7 +34,7 @@ jobs:
       shell: cmd
     - name: Upload
       uses: actions/upload-artifact@v2
-        with:
-          name: CECAT
-          path: ${{ github.workspace }}\dist\gui
-          retention-days: 90
+      with:
+        name: CECAT
+        path: ${{ github.workspace }}\dist\gui
+        retention-days: 90
